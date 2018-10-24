@@ -1,0 +1,63 @@
+# Javascript Node CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-javascript/ for more details
+#
+version: 2
+jobs:
+  build:
+    docker:
+      # specify the version you desire here
+      - image: circleci/node:7.10
+        environment: 
+          CONJUR_MAJOR_VERSION: 4
+          CONJUR_CERT_FILE: ./.circleci/conjur-mydemo.pem
+          CONJUR_HOST_FACTORY: circleci/executor_factory
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: npm install
+
+      - run:
+          name: Setup Conjur Identity
+          command: bash .circleci/setup-conjur-identity.sh
+
+      - run:
+          name: install summon
+          command: |
+            curl -sSL https://raw.githubusercontent.com/cyberark/summon/master/install.sh | sudo bash
+            curl -sSL https://raw.githubusercontent.com/cyberark/summon-conjur/master/install.sh | sudo bash
+
+      - run:
+          name: setup Heroku
+          command: |
+            env | grep CONJUR
+            summon -f .circleci/secrets.yml .circleci/setup-heroku.sh
+
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+
+      # run tests!
+      - run: npm test
+
+#      - add_ssh_keys:
+#          fingerprints:
+#            - "1b:59:5f:9f:e2:42:07:17:8e:63:42:16:9c:27:3b:29"
+      - deploy:
+          name: Deploy Master to Heroku
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              git push heroku master
+              heroku restart
+            fi
